@@ -4,6 +4,7 @@ import hashlib
 import itertools
 import math
 import os
+import re
 import warnings
 from pathlib import Path
 from typing import Optional
@@ -32,6 +33,11 @@ from transformers import AutoTokenizer, PretrainedConfig
 check_min_version("0.10.0.dev0")
 
 logger = get_logger(__name__)
+
+IMAGE_PATH_RE = re.compile(r'.*\.(png|jpg|jpeg)')
+
+def filter_image_paths(paths):
+    return filter(lambda path: IMAGE_PATH_RE.match(str(path)), paths)
 
 
 def import_model_class_from_model_name_or_path(pretrained_model_name_or_path: str, revision: str):
@@ -302,7 +308,8 @@ class DreamBoothDataset(Dataset):
         if not self.instance_data_root.exists():
             raise ValueError("Instance images root doesn't exists.")
 
-        self.instance_images_path = list(filter(lambda path: str(path).find("_depth.") == -1, self.instance_data_root.iterdir()))
+        self.instance_images_path = list(filter(lambda path: str(path).find("_depth.") == -1, filter_image_paths(self.instance_data_root.iterdir())))
+        
         self.num_instance_images = len(self.instance_images_path)
         self.instance_prompt = instance_prompt
         self._length = self.num_instance_images
@@ -310,7 +317,7 @@ class DreamBoothDataset(Dataset):
         if class_data_root is not None:
             self.class_data_root = Path(class_data_root)
             self.class_data_root.mkdir(parents=True, exist_ok=True)
-            self.class_images_path = list(filter(lambda path: str(path).find("_depth.") == -1, self.class_data_root.iterdir()))
+            self.class_images_path = list(filter(lambda path: str(path).find("_depth.") == -1, filter_image_paths(self.class_data_root.iterdir())))
             self.num_class_images = len(self.class_images_path)
             self._length = max(self.num_class_images, self.num_instance_images)
             self.class_prompt = class_prompt
@@ -438,7 +445,7 @@ def create_depth_images(paths, pretrained_model_name_or_path, accelerator, unet,
     pipeline.to("cuda")
     for path in paths:
         print(f"For each image in {path}, creating a depth image.")
-        path_iterator = Path(path).iterdir()
+        path_iterator = filter_image_paths(Path(path).iterdir())
         non_depth_image_files = list(filter(lambda path: str(path).find("_depth.") == -1, path_iterator))
         for image_path in tqdm(non_depth_image_files):
             depth_path = get_depth_image_path(image_path)
